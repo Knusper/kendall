@@ -6,9 +6,10 @@ Name
     kendall
 
 Purpose
-    Compute Kendall's tau correlation coefficient following Akritas & Siebert
-    (1996) MNRAS 278, 919-924, accounting for left-censored data (i.e., data
-    with upper limits).
+
+   Compute Kendall's tau correlation coefficient following Isobe, Feigelson, and Nelson
+   (1986; ApJ 306:490) accounting for left-censored data (i.e., data with upper limits).
+   
 
 Arguments
     :x (*np.ndarray*): 1xN array of independent variable, containing either
@@ -29,7 +30,7 @@ Returns
 """
 
 
-def kendall(x, y, censors=None):
+def kendall(x, y, censors=None, varcalc="simple", upper=True):
     # check that x and y are identical lengths
     if len(x) != len(y):
         print("X and Y different lengths!")
@@ -46,28 +47,68 @@ def kendall(x, y, censors=None):
         return
     # array of rank differences (J in A&S Eqns 1, 3, 5, and 6)
     J = np.zeros((2, n, n))
-    # array of data (T in A&S Eqn 1)
-    # switching from left- to right-censored
-    T = np.array([-x, -y])
-    tau = 0.0
-    # compute Kendall's tau
+    # array of data (T in A&S Eqn 1 is for right censored)
+    if upper:
+        T = np.array([-x, -y])
+    else:
+        T = np.array([x, y])
+
+    # Compute ararys a_ij & b_ij as defined in Eq. (27) of Isobe et al.
+    # or in Sect. 2.2 of Akritas & Siebert
+    # (a_ij in Isobe = -a_ij in Akritas, does not matter, but we follow Isobe)
     for j in range(n):
-        for i in range(j):
+        for i in range(n):
             for k in range(2):
                 I_kij = 0.0
                 if T[k, i] < T[k, j]:
                     I_kij = 1.0
+
                 I_kji = 0.0
                 if T[k, j] < T[k, i]:
                     I_kji = 1.0
-                J[k, i, j] = censors[k, i] * I_kij - censors[k, j] * I_kji
-    # A&S Eqn 3, 7
-    tau = np.sum(np.prod(J, axis=0))
-    # normalize by binomial coefficient (n choose 2)
+
+                J[k, i, j] = censors[k, j] * I_kji - censors[k, i] * I_kij
+
+    # Kendall's tau
+    tau = np.sum(np.prod(np.triu(J), axis=0))  
     tau *= 2 / (float(n) * (float(n) - 1))
-    # simple p-value
-    var = 2 * (2 * n + 5) / (9 * n * (n - 1))
-    p = 1 - erf(abs(tau) / np.sqrt(2 * var))
+
+    if varcalc == "simple":
+        # simple p-value
+        var = 2 * (2 * n + 5) / (9 * n * (n - 1))
+        p = 1 - erf(abs(tau) / np.sqrt(2 * var))
+
+    elif varcalc == "ifn":
+        # calculation after Eq. (26) in Isobe et al.
+        S_array = [[J[0, i, j] * J[1, i, j] for i in range(n)] for j in range(n)]
+        S = np.sum(np.array(S_array))
+
+        # calculation afer Eq. (28) in Isobe et al.
+        A_1_arr = np.array(
+            [
+                [[J[0, i, j] * J[0, i, k] for i in range(0, n)] for j in range(0, n)]
+                for k in range(0, n)
+            ]
+        )
+        B_1_arr = np.array(
+            [
+                [[J[1, i, j] * J[1, i, k] for i in range(0, n)] for j in range(0, n)]
+                for k in range(0, n)
+            ]
+        )
+
+        A_1 = np.sum(A_1_arr)
+        B_1 = np.sum(B_1_arr)
+        A_2 = np.sum(J[0, :, :] ** 2)
+        B_2 = np.sum(J[0, :, :] ** 2)
+        A_1 -= A_2
+        B_1 -= B_2
+        var_1 = (4 * A_1 * B_1) / (n * (n - 1) * (n - 2))
+        var_2 = (2 * A_2 * B_2) / (n * (n - 1))
+        var = var_1 + var_2
+
+        p = 1 - erf(abs(S) / np.sqrt(2 * var))
+
     return tau, p
 
 
