@@ -1,64 +1,79 @@
-# kendall
-Calculate non-parametric correlation coefficient Kendall's tau, accounting for censoring (upper/lower limits),
-based on the two-variable correlation formalism of Akrita & Siebert. 1996. MNRAS 278, 919-924.
-Additional function is included to determine the sensitivity of the correlation coefficient 
-to individual datum (done by bootstrapping) and/or uncertainties in the data (done by Monte Carlo sampling).
+# Kendall's tau for censored data in python
 
-While this code is provided publicly, I request that any use thereof be cited in any publications in which this code is used.
-This script was initially developed, implemented, and tested for work presented in Flury et al. 2022 ApJ 930, 126.
+The python functions in `kendall.py` calculate non-parametric correlation coefficient
+Kendall's tau and the associated p-value for a paired sample of ordinal data that may be
+partially censored (either with upper- or lower- limits; but not with mixed upper- and
+lower limits). 
 
-## Example Usage
-``` python
-from kendall import *
-# gen random data
-np.random.seed(123)
-x = np.random.rand(89)
-y = x+0.1*np.random.randn(len(x))
-# gen random "upper limits"
-censors = np.ones((2,len(x)))
-uplims = np.unique(np.random.randint(0,high=len(x)-1,size=60))
-censors[1,uplims]=0
-uncens = [i for i in range(len(x)) if i not in uplims]
-# faux uncertainties, accounting for upper limits
-x_err = 0.1*np.random.rand(len(x))*censors[0]
-y_err = 0.1*np.random.rand(len(y))*censors[1]
-# Kendall tau
-tau,p = kendall(x,y,censors=censors)
-tau_lo,tau_up = tau_conf(x,y,censors,method='bootstrap')
-print(f'censored Kendall tau: {tau:.3f}-{tau_lo:.3f}+{tau_up:.3f}, p: {p:.3e}')
-```
-which prints the following to the command line
-```
-censored Kendall tau: 0.465-0.018+0.018, p: 1.094e-10
-```
+The calculation of tau and p follows the calculation presented in [Isobe, Feigelson, and
+Nelson (1986; ApJ 306:490)][1].  Originally this formalism was developed in the context
+of medical science[^1] by [Brown, Holander & Korwar (1974)][3].  In the context of
+partial correlations it has also been presented in [Akritas & Seibert (1996; MNRAS 278,
+919)][2], but with a more compact notation.
 
-## BibTeX Reference
-Flury et al. 2022 ApJ 930, 126.
-``` bibtex
-@ARTICLE{2022ApJ...930..126F,
-       author = {{Flury}, Sophia R. and {Jaskot}, Anne E. and {Ferguson}, Harry C. and {Worseck}, G{\'a}bor and {Makan}, Kirill and {Chisholm}, John and {Saldana-Lopez}, Alberto and {Schaerer}, Daniel and {McCandliss}, Stephan R. and {Xu}, Xinfeng and {Wang}, Bingjie and {Oey}, M.~S. and {Ford}, N.~M. and {Heckman}, Timothy and {Ji}, Zhiyuan and {Giavalisco}, Mauro and {Amor{\'\i}n}, Ricardo and {Atek}, Hakim and {Blaizot}, Jeremy and {Borthakur}, Sanchayeeta and {Carr}, Cody and {Castellano}, Marco and {De Barros}, Stephane and {Dickinson}, Mark and {Finkelstein}, Steven L. and {Fleming}, Brian and {Fontanot}, Fabio and {Garel}, Thibault and {Grazian}, Andrea and {Hayes}, Matthew and {Henry}, Alaina and {Mauerhofer}, Valentin and {Micheva}, Genoveva and {Ostlin}, Goran and {Papovich}, Casey and {Pentericci}, Laura and {Ravindranath}, Swara and {Rosdahl}, Joakim and {Rutkowski}, Michael and {Santini}, Paola and {Scarlata}, Claudia and {Teplitz}, Harry and {Thuan}, Trinh and {Trebitsch}, Maxime and {Vanzella}, Eros and {Verhamme}, Anne},
-        title = "{The Low-redshift Lyman Continuum Survey. II. New Insights into LyC Diagnostics}",
-      journal = {\apj},
-     keywords = {Reionization, Galactic and extragalactic astronomy, Hubble Space Telescope, Ultraviolet astronomy, Emission line galaxies, 1383, 563, 761, 1736, 459, Astrophysics - Astrophysics of Galaxies, Astrophysics - Cosmology and Nongalactic Astrophysics},
-         year = 2022,
-        month = may,
-       volume = {930},
-       number = {2},
-          eid = {126},
-        pages = {126},
-          doi = {10.3847/1538-4357/ac61e4},
-archivePrefix = {arXiv},
-       eprint = {2203.15649},
- primaryClass = {astro-ph.GA},
-       adsurl = {https://ui.adsabs.harvard.edu/abs/2022ApJ...930..126F},
-      adsnote = {Provided by the SAO/NASA Astrophysics Data System}
-}
-```
+The p-value calculation requires the distribution and the variance of tau under the
+null-hypothesis (i.e., no correlation) is required.  For uncensored data and large
+enough n the distribution can be approximated by a normal distribution (e.g.,
+[Wikipedia][4]).  In this case the resulting expression depends only on the sample
+size[^2] n.  (For small n and uncensored data the distribution depends on n and C, where
+C is the number of concordant pairs, but the somewhat cumbersome computation is not yet
+implemented here; `scipy` provides it since ~2019 -- see the [resolved issue
+github][https://github.com/scipy/scipy/issues/8456][^3].)
 
-## Licensing
+While for censored data and large n the distribution is approximately normal as well,
+the variance depends on the distribution of censored values with respect to the sample
+proportions [(Oakes 1982; Biometrics 38, 451)][5].  Thus, in practice, an estimate of
+the variance from the data is required.  This code follows the approach of Isobe et
+al. and Brown et al., but more refined approaches exists in the literature.  An example,
+developed with astronomical data in mind, is given by [Akritas, Murphy, and LaValley
+(1995; J Am Stat Assoc 429, 170)][6], however, as of yet[^2] the computation of p-values
+with this estimator is only implemented in R as part of the package NADA
+(routine `cenken`). 
 
-This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+[1]: https://doi.org/10.1086/164359 
+[2]: https://doi.org/10.1093/mnras/278.4.919
+[3]: https://ntrl.ntis.gov/NTRL/dashboard/searchResults/titleDetail/AD767617.xhtml
+[4]: https://en.wikipedia.org/wiki/Kendall_rank_correlation_coefficient#Hypothesis_test
+[5]: https://doi.org/10.2307/2530458
+[6]: https://doi.org/10.1080/01621459.1995.10476499
 
-This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+[^1]: Survival time comparison between patients receiving a heart transplant with
+	patients not receiving such treatment.
+[^2]: In the case of censored data and small n, you are advised to be very cautios with
+	the p-values computed here.	 In `scipy.stats.kendalltau`, perhaps conservatively,
+	small n means n < 50.
+[^3]: If someone is clever enough to understand this and to implement it here, PRs are
+    very welcome.
 
-You should have received a copy of the GNU General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
+Additional functionality is included to determine the robustness of the correlation
+coefficient to individual datum (done by bootstrapping) or uncertainties in the data
+(done by Monte Carlo sampling).  A description of the idea beyond these procedures can
+be found in [Curan (2015, arXiv:1411.3816)][Curan].
+
+[Curan]: https://arxiv.org/abs/1411.3816
+
+## Provided functions
+
+`kendall(x, y, censors=None, varcalc="simple", upper=True)` 
+
+`def tau_conf( x, y, x_err=None, y_err=None, censors=None, p_conf=0.6826,
+n_samp=int(1e4), method="montecarlo", varcalc="simple", upper=True, )`
+
+See online documentation of those function for notes on their usage.
+
+# History of this code
+
+A python implementation of the Isobe et al. algorithm was initially written by S. Flury
+for work presented in [Flury et al. (2022)][7].  This code assumed the theoretical value for
+the variance in the case of uncensored data and large n.  E.C. Herenz modified the code
+to use the empirical variance calculation as described in [Isobe et al. (1986)][1] for work
+presented in [Herenz et al. (2024)][8].
+
+[7]: https://doi.org/10.3847/1538-4357/ac61e4
+[8]: https://ui.adsabs.harvard.edu/abs/2024arXiv240603956H/abstract
+
+# Acknowledging the use of the code
+
+If your research benifits from this code, please cite Isobe et al. (1986) and include a
+link to this github repository. 
+
