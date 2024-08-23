@@ -1,36 +1,63 @@
 import numpy as np
-from scipy.special import erf, ndtr, ndtri
-
-"""
-Name
-    kendall
-
-Purpose
-
-   Compute Kendall's tau correlation coefficient following Isobe, Feigelson, and Nelson
-   (1986; ApJ 306:490) accounting for left-censored data (i.e., data with upper limits).
-   
-
-Arguments
-    :x (*np.ndarray*): 1xN array of independent variable, containing either
-                            measured values or detection limits
-    :y (*np.ndarray*): 1xN array of dependent variable, containing either
-                            measured values or detection limits
-
-Keyword Arguments:
-    :censors (*np.ndarray*): 2xN array containing censors of `x` and `y` with 1
-                            representing an uncensored datum and 0 representing
-                            a left-censored (upper-limit) datum. Default is
-                            uncensored (2xN array of 1s).
-
-Returns
-    :tau (*float*): Kendall's tau correlation coefficient, accounting for
-                            upper limits on data
-    :p (*float*): probability that the null hypothesis (no correlation) is true
-"""
+from scipy.special import erf
 
 
 def kendall(x, y, censors=None, varcalc="simple", upper=True):
+    """Compute Kendall's tau and associated p-value for censored paired data (i.e., data
+    with upper or lower limits).  Kendall's tau is a correlation measure for ordinal data.
+
+    Data has to be either left- or right censored (upper limits or lower limits).
+
+    Parameters
+    ----------
+
+    x : numpy.ndarray
+      1D array of sample values of length N (measured values or detection limits)
+
+    y : numpy.ndarray
+      1D array of paired sample values to y (measured values or detection limits)
+
+    censors: np.ndarray | NoneType
+      2xN array containing censors of `x` and `y` with 1 representing an uncensored
+      datum and 0 representing a left-censored (upper-limit) datum.  If `None` is given
+      (default) all values of x and y are assumed to be uncensored uncensored (2xN array
+      of 1s).
+
+    varcalc : {'simple', 'ifn'}
+      Method used to estimate the p-value (see Notes).
+
+      * `simple`: Uses the asymptotic approximation of the variance for uncensored data.
+      * `ifn`: Uses the approximation from Isobe, Feigelson, and Nelson (1986)
+
+    upper : bool
+      If `True` (default), it will
+
+    Notes
+    -----
+
+    The calculation of tau and p follows the calculation presented in [Isobe, Feigelson,
+    and Nelson (1986; ApJ 306:490)][1].  Originally this formalism was developed in a
+    biostatistics context by [Brown, Holander & Korwar (1974)][3].  In the context of
+    partial correlations it has also been presented in [Akritas & Seibert (1996; MNRAS
+    278, 919][2], but with a more compact notation.
+
+    [1]: https://doi.org/10.1086/164359
+    [2]: https://doi.org/10.1093/mnras/278.4.919
+    [3]: https://ntrl.ntis.gov/NTRL/dashboard/searchResults/titleDetail/AD767617.xhtml
+
+    For the calculation of the p-value the distribution and the variance of tau under the
+    null-hypothesis (no correlation) is required.  For uncensored data and large enough
+    n the distribution can be appoximated by a normal distribution (e.g.,
+    [Wikipedia][4]) and the resulting expression depends only on the sample size n.
+    While for censored data the distribution is approximately normal as well, the
+    variance depends on the distribution of censored values with respect to the sample
+    proportions [(Oakes 1982; Biometrics 38, 451)][5].
+
+    [4]: https://en.wikipedia.org/wiki/Kendall_rank_correlation_coefficient#Hypothesis_test
+    [5]: https://doi.org/10.2307/2530458
+
+    """
+
     # check that x and y are identical lengths
     if len(x) != len(y):
         print("X and Y different lengths!")
@@ -70,7 +97,7 @@ def kendall(x, y, censors=None, varcalc="simple", upper=True):
                 J[k, i, j] = censors[k, j] * I_kji - censors[k, i] * I_kij
 
     # Kendall's tau
-    tau = np.sum(np.prod(np.triu(J), axis=0))  
+    tau = np.sum(np.prod(np.triu(J), axis=0))
     tau *= 2 / (float(n) * (float(n) - 1))
 
     if varcalc == "simple":
@@ -112,36 +139,6 @@ def kendall(x, y, censors=None, varcalc="simple", upper=True):
     return tau, p
 
 
-"""
-Name
-    tau_conf
-
-Purpose
-    Determine confidence intervals on Kendall's tau with left-censored data by
-    bootstrapping values of x and y. Kendall's tau calculated following
-    Akritas & Siebert (1996) MNRAS 278, 919-924.
-
-Arguments
-    :x (*np.ndarray*): 1xN array of independent variable, containing either
-                            measured values or detection limits
-    :y (*np.ndarray*): 1xN array of dependent variable, containing either
-                            measured values or detection limits
-
-Keyword Arguments:
-    :censors (*np.ndarray*): 2xN array containing censors of `x` and `y` with 1
-                            representing an uncensored datum and 0 representing
-                            a left-censored (upper-limit) datum. Default is
-                            uncensored (2xN array of 1s).
-    :p_conf (*float*): two-sided  probability interval of the desired confidence
-                            interval. Default is 0.6826 (1-sigma).
-    :n_samp (*int*): number of samples to draw. Default is 10^4.
-    :method (*str*): 'montecarlo' for Monte Carlo sampling of uncertainties or
-                            'bootstrap' for bootstrapping of measurements.
-                            Default is 'montecarlo'.
-
-"""
-
-
 def tau_conf(
     x,
     y,
@@ -151,16 +148,48 @@ def tau_conf(
     p_conf=0.6826,
     n_samp=int(1e4),
     method="montecarlo",
+    varcalc="simple",
+    upper=True,
 ):
+    """
+    Name
+        tau_conf
+
+    Purpose
+        Determine confidence intervals on Kendall's tau with left-censored data by
+        bootstrapping values of x and y. Kendall's tau calculated following
+        Akritas & Siebert (1996) MNRAS 278, 919-924.
+
+    Arguments
+        :x (*np.ndarray*): 1xN array of independent variable, containing either
+                                measured values or detection limits
+        :y (*np.ndarray*): 1xN array of dependent variable, containing either
+                                measured values or detection limits
+
+    Keyword Arguments:
+        :censors (*np.ndarray*): 2xN array containing censors of `x` and `y` with 1
+                                representing an uncensored datum and 0 representing
+                                a left-censored (upper-limit) datum. Default is
+                                uncensored (2xN array of 1s).
+        :p_conf (*float*): two-sided  probability interval of the desired confidence
+                                interval. Default is 0.6826 (1-sigma).
+        :n_samp (*int*): number of samples to draw. Default is 10^4.
+        :method (*str*): 'montecarlo' for Monte Carlo sampling of uncertainties or
+                                'bootstrap' for bootstrapping of measurements.
+                                Default is 'montecarlo'.
+    """
     # check if censors exist, and if not, assume no censoring
     if np.any(censors == None):
         censors = np.ones((2, len(x)))
+
     # bootstrap sampling
     if method == "bootstrap":
         tau_boot = []
         for i in range(n_samp):
             inds = np.unique(np.random.randint(0, high=len(x) - 1, size=len(x)))
-            tau_i, p_i = kendall(x[inds], y[inds], censors[:, inds])
+            tau_i, p_i = kendall(
+                x[inds], y[inds], censors[:, inds], varcalc=varcalc, upper=upper
+            )
             tau_boot += [tau_i]
         quants = np.quantile(tau_boot, [0.5 - 0.5 * p_conf, 0.5, 0.5 + 0.5 * p_conf])
         tau_lower, tau_upper = np.diff(quants)
@@ -170,8 +199,11 @@ def tau_conf(
         x_mc = np.random.normal(size=(n_samp, len(x)), loc=x, scale=x_err)
         y_mc = np.random.normal(size=(n_samp, len(y)), loc=y, scale=y_err)
         for i in range(n_samp):
-            tau_i, p_i = kendall(x_mc[i, :], y_mc[i, :], censors)
+            tau_i, p_i = kendall(
+                x_mc[i, :], y_mc[i, :], censors, varcalc=varcalc, upper=upper
+            )
             tau_mc += [tau_i]
         quants = np.quantile(tau_mc, [0.5 - 0.5 * p_conf, 0.5, 0.5 + 0.5 * p_conf])
         tau_lower, tau_upper = np.diff(quants)
+
     return tau_lower, tau_upper
