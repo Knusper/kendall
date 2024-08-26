@@ -42,7 +42,7 @@ Additional functionality is included to determine the robustness of the correlat
 
 See online help of those function (or source code) for notes on their usage.
 
-# History of this code
+# History of this code 
 
 A python implementation of the Isobe et al. algorithm was initially written by S. Flury
 for work presented in [Flury et al. (2022)][7].  This code assumed the theoretical value for
@@ -58,3 +58,7 @@ presented in [Herenz et al. (2024)][8].
 If your research benifits from this code, please cite Isobe et al. (1986) and include a
 link to this github repository. 
 
+## Copyright
+
+The code is released under GPLv3 license (see LICENSE).
+Copyright: E.C. Herenz (2024), S. Flury (2023)

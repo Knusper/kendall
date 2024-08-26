@@ -1,3 +1,7 @@
+# kendall.py
+# Released under GPLv3 license (see LICENSE).
+# Copyright: E.C. Herenz (2024), S. Flury (2023)
+
 import numpy as np
 from scipy.special import erf
 
@@ -32,6 +36,12 @@ def kendall(x, y, censors=None, varcalc="simple", upper=True):
     upper : bool
       If `True` (default), it will
 
+    Returns
+    -------
+
+    result : tuple
+     (tau, p) -  with tau being Kendall's tau and p being the associated p-value.
+
     Notes
     -----
 
@@ -65,6 +75,7 @@ def kendall(x, y, censors=None, varcalc="simple", upper=True):
     else:
         # length of data
         n = len(x)
+        
     # check if censors exist, and if not, assume no censoring
     if np.any(censors == None):
         censors = np.ones((2, n))
@@ -72,6 +83,7 @@ def kendall(x, y, censors=None, varcalc="simple", upper=True):
     elif len(censors) != 2 or len(censors[0]) != n:
         print("Censor length must match data length!")
         return
+    
     # array of rank differences (J in A&S Eqns 1, 3, 5, and 6)
     J = np.zeros((2, n, n))
     # array of data (T in A&S Eqn 1 is for right censored)
@@ -82,7 +94,8 @@ def kendall(x, y, censors=None, varcalc="simple", upper=True):
 
     # Compute ararys a_ij & b_ij as defined in Eq. (27) of Isobe et al.
     # or in Sect. 2.2 of Akritas & Siebert
-    # (a_ij in Isobe = -a_ij in Akritas, does not matter, but we follow Isobe)
+    # (a_ij in Isobe = -a_ij in Akritas; does not matter in the calculations
+    # as they are invariant to skew-symmetry, but we follow Isobe)
     for j in range(n):
         for i in range(n):
             for k in range(2):
@@ -111,6 +124,7 @@ def kendall(x, y, censors=None, varcalc="simple", upper=True):
         S = np.sum(np.array(S_array))
 
         # calculation afer Eq. (28) in Isobe et al.
+        # - sums involving a_ij a_ik & b_ij b_ik
         A_1_arr = np.array(
             [
                 [[J[0, i, j] * J[0, i, k] for i in range(0, n)] for j in range(0, n)]
@@ -123,17 +137,21 @@ def kendall(x, y, censors=None, varcalc="simple", upper=True):
                 for k in range(0, n)
             ]
         )
-
         A_1 = np.sum(A_1_arr)
         B_1 = np.sum(B_1_arr)
+
+        # - sums involving a_ij**2 & b_ij**2
         A_2 = np.sum(J[0, :, :] ** 2)
         B_2 = np.sum(J[0, :, :] ** 2)
         A_1 -= A_2
         B_1 -= B_2
+
+        # final sum
         var_1 = (4 * A_1 * B_1) / (n * (n - 1) * (n - 2))
         var_2 = (2 * A_2 * B_2) / (n * (n - 1))
         var = var_1 + var_2
 
+        # z-score -> comparison to standard normal distribution -> p-value
         p = 1 - erf(abs(S) / np.sqrt(2 * var))
 
     return tau, p
@@ -145,65 +163,110 @@ def tau_conf(
     x_err=None,
     y_err=None,
     censors=None,
-    p_conf=0.6826,
     n_samp=int(1e4),
-    method="montecarlo",
-    varcalc="simple",
+    method="bootstrap",
     upper=True,
+    return_tau_dist=False,
 ):
-    """
-    Name
-        tau_conf
+    """Determine confidence intervals on Kendall's tau computed withe the function `kendall`
+    either by bootstrapping values of x and y, or by a Monte-Carlo simulation using
+    error-bars on x and y.
 
-    Purpose
-        Determine confidence intervals on Kendall's tau with left-censored data by
-        bootstrapping values of x and y. Kendall's tau calculated following
-        Akritas & Siebert (1996) MNRAS 278, 919-924.
+    Parameters
+    ----------
 
-    Arguments
-        :x (*np.ndarray*): 1xN array of independent variable, containing either
-                                measured values or detection limits
-        :y (*np.ndarray*): 1xN array of dependent variable, containing either
-                                measured values or detection limits
+    x : numpy.ndarray
+      1D array of sample values of length N (measured values or detection limits)
 
-    Keyword Arguments:
-        :censors (*np.ndarray*): 2xN array containing censors of `x` and `y` with 1
-                                representing an uncensored datum and 0 representing
-                                a left-censored (upper-limit) datum. Default is
-                                uncensored (2xN array of 1s).
-        :p_conf (*float*): two-sided  probability interval of the desired confidence
-                                interval. Default is 0.6826 (1-sigma).
-        :n_samp (*int*): number of samples to draw. Default is 10^4.
-        :method (*str*): 'montecarlo' for Monte Carlo sampling of uncertainties or
-                                'bootstrap' for bootstrapping of measurements.
-                                Default is 'montecarlo'.
+    y : numpy.ndarray
+      1D array of paired sample values to y (measured values or detection limits)
+
+    censors: np.ndarray | NoneType
+      2xN array containing censors of `x` and `y` with 1 representing an uncensored
+      datum and 0 representing a left-censored (upper-limit) datum.  If `None` is given
+      (default) all values of x and y are assumed to be uncensored uncensored (2xN array
+      of 1s).
+
+    p_conf: float
+      Two-sided probability interval of the desired confidence
+      interval. Default is 0.68 (~ 1-sigma).
+
+    n_samp: int
+      Number of bootstrap or Monte-Carlo samples.  Default is 1e4.
+
+    method: {"montecarlo", "bootstrap"}
+      Method to use for calculating confiendence (default: "bootstrap").  If
+      "montecarlo" is used, `x_err` and `y_err` are required, for "bootstrap" `x_err`
+      and `y_err` are ignored.
+
+    return_tau_dist: bool
+      Wether or not to return the full sample of tau results.
+
+    Returns
+    -------
+    result : tuple
+
+    If `return_tau_dist=False`:
+      `tau_q25, tau_median, tau_q75 : float, float`
+      Lower quartile, median, and upper quartile of tau distribution.
+
+    If `return_tau_dist=True`:
+      `tau_lower, tau_upper, np.ndarray`
+      Lower quartile, median, and upper quartile of tau distribution, as well as array
+      of all tau values drawn in the Monte-Carlo or bootstrap experiment
+
+    Notes
+    -----
+
+    Both formalisms, i.e. bootstrapping and Monte-Carlos simulation, for estimating the
+    robustness of the obtained correlation coefficient are explained in [Curan (1994;
+    arXiv:1411.3816)][1].
+
+    [1]: https://doi.org/10.48550/arXiv.1411.3816
+
     """
     # check if censors exist, and if not, assume no censoring
     if np.any(censors == None):
         censors = np.ones((2, len(x)))
 
-    # bootstrap sampling
+    tau_dist = np.empty(n_samp)
+
+    # in both methods we fix varcalc == simple, since we're only interested in tau
     if method == "bootstrap":
-        tau_boot = []
+        # boot-strap
         for i in range(n_samp):
             inds = np.unique(np.random.randint(0, high=len(x) - 1, size=len(x)))
-            tau_i, p_i = kendall(
-                x[inds], y[inds], censors[:, inds], varcalc=varcalc, upper=upper
+            tau_i, _ = kendall(
+                x[inds],
+                y[inds],
+                censors[:, inds],
+                varcalc="simple",
+                upper=upper,
             )
-            tau_boot += [tau_i]
-        quants = np.quantile(tau_boot, [0.5 - 0.5 * p_conf, 0.5, 0.5 + 0.5 * p_conf])
-        tau_lower, tau_upper = np.diff(quants)
-    # MC sampling
-    else:
-        tau_mc = []
+            tau_dist[i] = tau_i
+            
+    elif method == "montecarlo":
+        # monte-carlo simulation
         x_mc = np.random.normal(size=(n_samp, len(x)), loc=x, scale=x_err)
         y_mc = np.random.normal(size=(n_samp, len(y)), loc=y, scale=y_err)
+        if np.any(censors == None):
+            # do not alter the upper limits (TODO: this could be optional, as the upper limit is a
+            # statistic as well)
+            x_mc[~censors[0,:].astype(bool)] = x[~censors[0,:].astype(bool)]
+            y_mc[~censors[1,:].astype(bool)] = y[~censors[1,:].astype(bool)]
+            
         for i in range(n_samp):
-            tau_i, p_i = kendall(
-                x_mc[i, :], y_mc[i, :], censors, varcalc=varcalc, upper=upper
+            tau_i, _ = kendall(
+                x_mc[i, :], y_mc[i, :], censors, varcalc="simple", upper=upper
             )
-            tau_mc += [tau_i]
-        quants = np.quantile(tau_mc, [0.5 - 0.5 * p_conf, 0.5, 0.5 + 0.5 * p_conf])
-        tau_lower, tau_upper = np.diff(quants)
+            tau_dist[i] = tau_i
 
-    return tau_lower, tau_upper
+    else:
+        raise ValueError("Method parameter not understood")
+
+    tau_q25, tau_median, tau_q75 = np.quantile(tau_dist, [.25, 0.5, .75])
+    
+    if return_tau_dist == True:
+        return tau_q25, tau_median, tau_q75, tau_dist
+    else:
+        return tau_q25, tau_median, tau_q75
