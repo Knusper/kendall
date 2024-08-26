@@ -34,7 +34,8 @@ def kendall(x, y, censors=None, varcalc="simple", upper=True):
       * `ifn`: Uses the approximation from Isobe, Feigelson, and Nelson (1986)
 
     upper : bool
-      If `True` (default), it will
+      If `True` (default), upper limits are assumed.  Otherwise, censored data are regarded as
+      lower limits.
 
     Returns
     -------
