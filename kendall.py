@@ -144,7 +144,7 @@ def kendall(x, y, censors=None, varcalc="simple", upper=True):
 
         # - sums involving a_ij**2 & b_ij**2
         A_2 = np.sum(J[0, :, :] ** 2)
-        B_2 = np.sum(J[0, :, :] ** 2)
+        B_2 = np.sum(J[1, :, :] ** 2)
         A_1 -= A_2
         B_1 -= B_2
 
