@@ -4,6 +4,7 @@
 
 import numpy as np
 from scipy.special import erf
+from tqdm import tqdm
 
 
 def kendall(x, y, censors=None, varcalc="simple", upper=True):
@@ -76,7 +77,7 @@ def kendall(x, y, censors=None, varcalc="simple", upper=True):
     else:
         # length of data
         n = len(x)
-        
+
     # check if censors exist, and if not, assume no censoring
     if np.any(censors == None):
         censors = np.ones((2, n))
@@ -84,7 +85,7 @@ def kendall(x, y, censors=None, varcalc="simple", upper=True):
     elif len(censors) != 2 or len(censors[0]) != n:
         print("Censor length must match data length!")
         return
-    
+
     # array of rank differences (J in A&S Eqns 1, 3, 5, and 6)
     J = np.zeros((2, n, n))
     # array of data (T in A&S Eqn 1 is for right censored)
@@ -164,14 +165,14 @@ def tau_conf(
     x_err=None,
     y_err=None,
     censors=None,
-    n_samp=int(1e4),
+    n_samp=1e4,
     method="bootstrap",
     upper=True,
     return_tau_dist=False,
 ):
     """Determine confidence intervals on Kendall's tau computed withe the function `kendall`
     either by bootstrapping values of x and y, or by a Monte-Carlo simulation using
-    error-bars on x and y.
+    error-bars on x and/or y.
 
     Parameters
     ----------
@@ -181,6 +182,12 @@ def tau_conf(
 
     y : numpy.ndarray
       1D array of paired sample values to y (measured values or detection limits)
+
+    x_err : NoneType | np.ndarray
+      1D errors of uncertainties associated with x.
+
+    y_err : NoneType | np.ndarray
+      1D errors of uncertainties associated with y.
 
     censors: np.ndarray | NoneType
       2xN array containing censors of `x` and `y` with 1 representing an uncensored
@@ -226,6 +233,8 @@ def tau_conf(
     [1]: https://doi.org/10.48550/arXiv.1411.3816
 
     """
+    n_samp = int(n_samp)
+    
     # check if censors exist, and if not, assume no censoring
     if np.any(censors == None):
         censors = np.ones((2, len(x)))
@@ -235,7 +244,8 @@ def tau_conf(
     # in both methods we fix varcalc == simple, since we're only interested in tau
     if method == "bootstrap":
         # boot-strap
-        for i in range(n_samp):
+        print("Doing bootstraps for n_samp=" + str(n_samp))
+        for i in tqdm(range(n_samp)):
             inds = np.unique(np.random.randint(0, high=len(x) - 1, size=len(x)))
             tau_i, _ = kendall(
                 x[inds],
@@ -245,28 +255,36 @@ def tau_conf(
                 upper=upper,
             )
             tau_dist[i] = tau_i
-            
-    elif method == "montecarlo":
+
+    elif method == "montecarlo" and (np.any(x_err != None) or np.any(y_err != None)):
+        # allow for only x or y errors being passed
+        if np.any(x_err == None):
+            x_err = np.zeros_like(x)
+        if np.any(y_err == None):
+            y_err = np.zeros_like(y)
         # monte-carlo simulation
         x_mc = np.random.normal(size=(n_samp, len(x)), loc=x, scale=x_err)
         y_mc = np.random.normal(size=(n_samp, len(y)), loc=y, scale=y_err)
         if np.any(censors == None):
             # do not alter the upper limits (TODO: this could be optional, as the upper limit is a
             # statistic as well)
-            x_mc[~censors[0,:].astype(bool)] = x[~censors[0,:].astype(bool)]
-            y_mc[~censors[1,:].astype(bool)] = y[~censors[1,:].astype(bool)]
-            
-        for i in range(n_samp):
+            x_mc[~censors[0, :].astype(bool)] = x[~censors[0, :].astype(bool)]
+            y_mc[~censors[1, :].astype(bool)] = y[~censors[1, :].astype(bool)]
+
+        print("Running MC simulation for n_samp = " + str(n_samp))
+        for i in tqdm(range(n_samp)):
             tau_i, _ = kendall(
                 x_mc[i, :], y_mc[i, :], censors, varcalc="simple", upper=upper
             )
             tau_dist[i] = tau_i
 
     else:
-        raise ValueError("Method parameter not understood")
+        raise ValueError(
+            "Method parameter not understood, or neither x_err nor y_err defined"
+        )
 
-    tau_q25, tau_median, tau_q75 = np.quantile(tau_dist, [.25, 0.5, .75])
-    
+    tau_q25, tau_median, tau_q75 = np.quantile(tau_dist, [0.25, 0.5, 0.75])
+
     if return_tau_dist == True:
         return tau_q25, tau_median, tau_q75, tau_dist
     else:
