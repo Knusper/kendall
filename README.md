@@ -54,7 +54,7 @@ presented in [Herenz et al. (2024)][8].
 [7]: https://doi.org/10.3847/1538-4357/ac61e4
 [8]: https://ui.adsabs.harvard.edu/abs/2024arXiv240603956H/abstract
 
-# Reqiuirements
+# Requirements
 
 - numpy - https://numpy.org/
 - scipy - https://scipy.org/
