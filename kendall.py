@@ -1,9 +1,13 @@
 # kendall.py
 # Released under GPLv3 license (see LICENSE).
-# Copyright: E.C. Herenz (2024), S. Flury (2023)
+# Copyright: E.C. Herenz (2024,2026), S. Flury (2023)
+
+import itertools
+import math as m
 
 import numpy as np
 from scipy.special import erf
+from scipy.stats import kendaltau
 from tqdm import tqdm
 
 
@@ -24,9 +28,9 @@ def kendall(x, y, censors=None, varcalc="simple", upper=True):
 
     censors: np.ndarray | NoneType
       2xN array containing censors of `x` and `y` with 1 representing an uncensored
-      datum and 0 representing a left-censored (upper-limit) datum.  If `None` is given
-      (default) all values of x and y are assumed to be uncensored uncensored (2xN array
-      of 1s).
+      datum and 0 representing a left- or right censored datum (i.e., upper- or lower
+      limit depending on the option bool).  If `None` is given (default) all values of x
+      and y are assumed to be uncensored uncensored (2xN array of 1s).
 
     varcalc : {'simple', 'ifn'}
       Method used to estimate the p-value (see Notes).
@@ -234,7 +238,7 @@ def tau_conf(
 
     """
     n_samp = int(n_samp)
-    
+
     # check if censors exist, and if not, assume no censoring
     if np.any(censors == None):
         censors = np.ones((2, len(x)))
@@ -289,3 +293,83 @@ def tau_conf(
         return tau_q25, tau_median, tau_q75, tau_dist
     else:
         return tau_q25, tau_median, tau_q75
+
+
+def partial_corr(T1, T2, T3):
+    """Calculate partial tau & p-Value using Akritas & Siebert 1996; MNRAS 278, 919,
+    doi:10.1093/mnras/278.4.919.
+
+    This is a naive reference implementation (slow, especially for large datasets!), no
+    support for censored data (albeit this could be easily added if need arises).
+
+    Parameters
+    ----------
+    T1, T2, T3 - list-likes - the three input parameters
+
+    Returns
+    -------
+    t123, p - floats - Kendall's partial correlation coefficient and p-value under 
+      null-hypothesis that tau_12 = tau_13 * tau_23, i.e., that tau_12 completly driven
+      by the first and the second parameter corelations with the third paraemter.
+    """
+
+    assert len(T1) == len(T2)
+    assert len(T2) == len(T3)
+
+    # partial tau calculation
+    N = len(T1)
+
+    T = np.asarray([T1, T2, T3])
+
+    t_12 = kendalltau(T[0], T[1]).statistic
+    t_13 = kendalltau(T[0], T[2]).statistic
+    t_23 = kendalltau(T[1], T[2]).statistic
+
+    t_123_denom_sq = (1 - t_13**2) * (1 - t_23**2)
+    t_123 = (t_12 - t_13 * t_23) / m.sqrt(t_123_denom_sq)
+
+    # p-value caclulation
+    I = np.zeros((3, N, N))
+    J = I.copy()
+    for i in range(3):
+        I[i] = T[i][np.newaxis, :] < T[i][:, np.newaxis]
+        J[i] = I[i] - I[i].T
+
+    h_12 = J[0] * J[1]
+    h_13 = J[0] * J[2]
+    h_23 = J[1] * J[2]
+
+    def g(i1, j1, i2, j2):
+        def g_snake(i1, j1, i2, j2):
+            return h_12[i1, j1] - h_13[i1, j1] * h_23[i2, j2]
+
+        return (
+            sum(g_snake(*perm) for perm in itertools.permutations((i1, j1, i2, j2)))
+            / 24
+        )
+
+    # this is slow, but readable - we need to abstract this for speed
+    B = np.asarray(
+        [
+            sum(
+                g(i1, j1, i2, j2)
+                for j1 in range(N)
+                for i2 in range(N)
+                for j2 in range(N)
+                if j1 < i2 < j2 and j1 != i1 and j2 != i1
+            )
+            for i1 in range(N)
+        ]
+    )
+    B *= 6 / ((N - 1) * (N - 2) * (N - 3))
+
+    A_N = np.sum((B - np.mean(B)) ** 2) / (N - 1)
+
+    var = (16 * A_N) / (N * t_123_denom_sq)
+
+    # calculation of two-tailed p-Value under normal approximation
+    p = 1 - erf(
+        abs(t_123) / np.sqrt(2 * var)
+    )  # e.g. Appendix E in my Herenz+2025 LARS paper
+
+    return t_123, p
