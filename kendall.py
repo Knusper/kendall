@@ -6,7 +6,7 @@ import itertools
 import math as m
 
 import numpy as np
-from scipy.special import erf
+from scipy.special import erf, erfcinv
 from scipy.stats import kendaltau
 from tqdm import tqdm
 
@@ -373,3 +373,26 @@ def partial_corr(T1, T2, T3):
     )  # e.g. Appendix E in my Herenz+2025 LARS paper
 
     return t_123, p
+
+
+def calc_tau_thresh(p0, N):
+    """Given sample size N and desired p₀ threshold, calculate smallest |τ'| for which
+       p(|τ| > |τ'|) < p₀.
+
+    Parameters
+    ----------
+    p0 : float
+        Probability p₀ that the pair-wise ranking permutation of N pairs arises at random.
+    N : int
+        Number of pairs.
+
+    Return
+    ------
+    tau_thresh : float
+        Threshold in |τ| at which null hypothesis can be rejected.
+    """
+    
+    assert N > 30  # assuming normal distribution for Kendall tau under null hypothesis
+    var_tau = (4 * N + 10) / (9 * N * (N - 1))
+    tau_thresh = m.sqrt(2 * var_tau) * erfcinv(p0)
+    return tau_thresh
