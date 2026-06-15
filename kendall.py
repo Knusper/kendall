@@ -7,7 +7,7 @@ import math as m
 
 import numpy as np
 from scipy.special import erf, erfcinv
-from scipy.stats import kendaltau
+from scipy.stats import kendalltau
 from tqdm import tqdm
 
 
